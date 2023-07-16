@@ -18,29 +18,45 @@ class Pagy
     end
 
     def pagy_cursor_get_items(collection, pagy)
-      items = collection.order(id: :asc)
-
-      if pagy.page.nil?
-        items = items.limit(pagy.items + 1).to_a
+      if pagy.before
+        # get extra item before the id so we can determine if there is another
+        # page before this
+        items = collection.order(id: :desc).where(
+          :id.lt => pagy.before
+        ).limit(pagy.items + 1).to_a.reverse
+        # if there is an extra item that means we have another page before this
+        # so we shift off the extra item and set the before id to the first item
+        if items.size > pagy.items
+          items.shift
+          before_id = items.first.id
+        end
+        after_id = items.last.id
       else
-        items = items.where(:id.gte => pagy.page).limit(pagy.items + 1).to_a
-
-        prev_items = collection.where(:id.lt => pagy.page).
-                                order(id: :desc).
-                                limit(pagy.items).
-                                to_a.reverse
-        prev_id = prev_items.first.id if prev_items.size == pagy.items
+        if pagy.after
+          # get extra item after the id so we can determine if there is another
+          # page after this
+          items = collection.order(id: :asc).where(
+            :id.gt => pagy.after
+          ).limit(pagy.items + 1).to_a
+          before_id = items.first&.id
+        else
+          items = collection.order(id: :asc).limit(pagy.items + 1).to_a
+        end
+        # if there is an extra item that means we have another page after this
+        # we pop off the extra item and set the after id to the last item
+        if items.size > pagy.items
+          items.pop
+          after_id = items.last&.id
+        end
       end
-      next_id = items.pop&.id if items.size > pagy.items
 
       if pagy.vars[:cursor_last_page_link]
-        last_items = collection.order(id: :desc).
-                                limit(pagy.items).
-                                only(:id).to_a
-        last_id = last_items.last.id if last_items.size == pagy.items
+        last_id = collection.order(id: :desc).limit(
+          pagy.items + 1
+        ).pluck(:id).last
       end
 
-      pagy.finalize(prev_id, next_id, last_id)
+      pagy.finalize(before_id, after_id, last_id)
       items
     end
 
